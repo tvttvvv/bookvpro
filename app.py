@@ -30,9 +30,9 @@ def generate_signature(timestamp, method, uri, secret_key):
     return base64.b64encode(signature).decode()
 
 # -----------------------------
-# 검색 함수 (가장 안정적인 방식)
+# 검색 함수
 # -----------------------------
-def search_keyword(keyword):
+def search_keyword(keyword, include_related=False):
 
     uri = "/keywordstool"
     method = "GET"
@@ -57,14 +57,13 @@ def search_keyword(keyword):
         response = requests.get(BASE_URL + uri, headers=headers, params=params, timeout=7)
 
         if response.status_code != 200:
-            return {"keyword": keyword, "pc": 0, "mobile": 0, "total": 0}
+            return None
 
         data = response.json().get("keywordList", [])
 
         if not data:
-            return {"keyword": keyword, "pc": 0, "mobile": 0, "total": 0}
+            return None
 
-        # 첫 번째 값 사용 (이 방식이 가장 안정적이었음)
         item = data[0]
 
         def safe_convert(value):
@@ -77,18 +76,25 @@ def search_keyword(keyword):
         pc = safe_convert(item["monthlyPcQcCnt"])
         mobile = safe_convert(item["monthlyMobileQcCnt"])
 
+        related_keywords = []
+
+        if include_related:
+            for rel in data[:10]:
+                related_keywords.append(rel["relKeyword"])
+
         return {
             "keyword": keyword,
             "pc": pc,
             "mobile": mobile,
-            "total": pc + mobile
+            "total": pc + mobile,
+            "related": related_keywords
         }
 
     except:
-        return {"keyword": keyword, "pc": 0, "mobile": 0, "total": 0}
+        return None
 
 # -----------------------------
-# 메인 화면
+# 메인 페이지
 # -----------------------------
 @app.route("/")
 def home():
@@ -104,31 +110,54 @@ def home():
 <div class="container mt-5">
 <h2 class="mb-4 text-center">📚 BookVPro 검색 시스템</h2>
 
-<form method="POST" action="/search">
+<form method="POST" action="/search" onsubmit="showLoading()">
 <textarea name="books" class="form-control mb-3" rows="8"
 placeholder="책 제목을 한 줄에 하나씩 입력하세요"></textarea>
 
+<div class="form-check mb-3">
+  <input class="form-check-input" type="checkbox" name="include_related" value="yes" id="relatedCheck">
+  <label class="form-check-label" for="relatedCheck">
+    연관 검색어 표시
+  </label>
+</div>
+
 <button class="btn btn-primary w-100">검색 시작</button>
 </form>
+
+<div id="loading" class="text-center mt-3" style="display:none;">
+<div class="spinner-border text-primary"></div>
+<p>검색 중입니다...</p>
 </div>
+
+</div>
+
+<script>
+function showLoading(){
+document.getElementById("loading").style.display="block";
+}
+</script>
+
 </body>
 </html>
 """)
 
 # -----------------------------
-# 검색 처리 (순차 안정 버전)
+# 검색 처리
 # -----------------------------
 @app.route("/search", methods=["POST"])
 def search():
 
     books = request.form.get("books", "")
+    include_related = request.form.get("include_related") == "yes"
+
     books = [b.strip() for b in books.split("\n") if b.strip()]
 
     results = []
 
     for book in books:
-        result = search_keyword(book)
-        results.append(result)
+        result = search_keyword(book, include_related)
+        if result:
+            results.append(result)
 
     return render_template_string("""
 <!doctype html>
@@ -155,6 +184,9 @@ def search():
 <th>PC</th>
 <th>모바일</th>
 <th>총합</th>
+{% if results and results[0].related %}
+<th>연관 검색어</th>
+{% endif %}
 </tr>
 </thead>
 <tbody>
@@ -164,6 +196,9 @@ def search():
 <td>{{r.pc}}</td>
 <td>{{r.mobile}}</td>
 <td><strong>{{r.total}}</strong></td>
+{% if r.related %}
+<td>{{ r.related | join(", ") }}</td>
+{% endif %}
 </tr>
 {% endfor %}
 </tbody>
@@ -171,6 +206,7 @@ def search():
 </div>
 
 <a href="/" class="btn btn-secondary mt-3">다시 검색</a>
+
 </div>
 </body>
 </html>
