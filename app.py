@@ -144,3 +144,48 @@ def download(job_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
+@app.route("/")
+def home():
+    return """
+    <h2>BookVPro 대량 검색 시스템</h2>
+    <form id="form">
+        <textarea id="books" rows="15" cols="60" placeholder="책 제목을 줄바꿈으로 입력하세요"></textarea><br><br>
+        <button type="button" onclick="startSearch()">검색 시작</button>
+    </form>
+    <br>
+    <div id="progress"></div>
+
+    <script>
+    let jobId = null;
+
+    function startSearch(){
+        fetch("/start", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({books: document.getElementById("books").value})
+        })
+        .then(res => res.json())
+        .then(data => {
+            jobId = data.job_id;
+            checkStatus();
+        });
+    }
+
+    function checkStatus(){
+        fetch("/status/" + jobId)
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById("progress").innerHTML =
+                "진행률: " + data.progress + "%";
+
+            if(data.status !== "completed"){
+                setTimeout(checkStatus, 2000);
+            } else {
+                document.getElementById("progress").innerHTML +=
+                "<br><a href='/download/" + jobId + "'>엑셀 다운로드</a>";
+            }
+        });
+    }
+    </script>
+    """
