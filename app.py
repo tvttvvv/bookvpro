@@ -4,14 +4,15 @@ import hashlib
 import hmac
 import base64
 import requests
-from flask import Flask, render_template_string, request
+import pandas as pd
+from flask import Flask, render_template_string, request, send_file
+from io import BytesIO
 
-# 환경변수에서 API 키 불러오기
 ACCESS_KEY = os.environ.get("ACCESS_KEY")
 SECRET_KEY = os.environ.get("SECRET_KEY")
 CUSTOMER_ID = os.environ.get("CUSTOMER_ID")
 
-BASE_URL = "https://api.naver.com"
+BASE_URL = "https://api.searchad.naver.com"
 
 app = Flask(__name__)
 
@@ -45,17 +46,13 @@ def get_keyword_volume(keyword):
     }
 
     response = requests.get(BASE_URL + uri, headers=headers, params=params)
-
     if response.status_code != 200:
-        return None
-
-    return response.json()
+        return []
+    return response.json().get("keywordList", [])
 
 def convert_to_int(value):
-    if isinstance(value, str):
-        if "<" in value:
-            return 0
-        return int(value)
+    if isinstance(value, str) and "<" in value:
+        return 0
     return int(value)
 
 HTML = """
@@ -65,62 +62,56 @@ HTML = """
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BookVPro</title>
-
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
 </head>
 <body class="bg-light">
-
 <div class="container mt-4">
 
-<h3 class="mb-4">📚 BookVPro - 책 검색량 조회</h3>
+<h3>📚 BookVPro - 대량 검색</h3>
 
-<form method="post" class="row g-2 mb-4">
-    <div class="col-12 col-md-6">
-        <input type="text" name="keyword" class="form-control" placeholder="책 제목 입력">
-    </div>
+<form method="post">
+<textarea name="keywords" class="form-control mb-3" rows="6"
+placeholder="한 줄에 한 권씩 입력하세요"></textarea>
 
-    <div class="col-6 col-md-3">
-        <div class="form-check">
-            <input class="form-check-input" type="checkbox" name="related" id="related">
-            <label class="form-check-label" for="related">
-                연관 키워드 포함
-            </label>
-        </div>
-    </div>
-
-    <div class="col-6 col-md-3">
-        <button type="submit" class="btn btn-primary w-100">검색</button>
-    </div>
+<button type="submit" class="btn btn-primary">검색</button>
 </form>
 
 {% if results %}
-<div class="table-responsive">
+<hr>
+<form method="post" action="/download">
 <table class="table table-bordered table-striped">
 <thead class="table-dark">
 <tr>
+<th>책 제목</th>
 <th>키워드</th>
 <th>PC</th>
 <th>모바일</th>
 <th>총합</th>
+<th>연관 포함</th>
 </tr>
 </thead>
 <tbody>
-{% for row in results %}
+{% for r in results %}
 <tr>
-<td>{{ row.keyword }}</td>
-<td>{{ row.pc }}</td>
-<td>{{ row.mobile }}</td>
-<td>{{ row.total }}</td>
+<td>{{ r.original }}</td>
+<td>{{ r.keyword }}</td>
+<td>{{ r.pc }}</td>
+<td>{{ r.mobile }}</td>
+<td>{{ r.total }}</td>
+<td>
+<input type="checkbox" name="related_{{ loop.index0 }}">
+</td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
-</div>
+
+<input type="hidden" name="data" value="{{ results|tojson }}">
+<button class="btn btn-success">엑셀 다운로드</button>
+</form>
 {% endif %}
 
 </div>
-
 </body>
 </html>
 """
@@ -128,26 +119,22 @@ HTML = """
 @app.route("/", methods=["GET", "POST"])
 def index():
     results = []
-
     if request.method == "POST":
-        keyword = request.form.get("keyword")
-        include_related = request.form.get("related")
+        keywords_raw = request.form.get("keywords")
+        keywords = [k.strip() for k in keywords_raw.splitlines() if k.strip()]
 
-        data = get_keyword_volume(keyword)
+        for kw in keywords:
+            data = get_keyword_volume(kw)
+            time.sleep(0.3)
 
-        if data and "keywordList" in data:
-            for item in data["keywordList"]:
+            for item in data:
                 rel_keyword = item["relKeyword"]
-
-                if not include_related:
-                    if rel_keyword.replace(" ", "") != keyword.replace(" ", ""):
-                        continue
-
                 pc = convert_to_int(item["monthlyPcQcCnt"])
                 mobile = convert_to_int(item["monthlyMobileQcCnt"])
                 total = pc + mobile
 
                 results.append({
+                    "original": kw,
                     "keyword": rel_keyword,
                     "pc": pc,
                     "mobile": mobile,
@@ -155,6 +142,21 @@ def index():
                 })
 
     return render_template_string(HTML, results=results)
+
+@app.route("/download", methods=["POST"])
+def download():
+    import json
+    data = json.loads(request.form.get("data"))
+
+    df = pd.DataFrame(data)
+    output = BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+
+    return send_file(output,
+                     as_attachment=True,
+                     download_name="bookvpro_result.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 if __name__ == "__main__":
     app.run()
