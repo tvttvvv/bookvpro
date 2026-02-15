@@ -55,17 +55,29 @@ def search_book(keyword):
     response = requests.get(url, headers=headers, params=params)
 
     if response.status_code != 200:
-        return {"keyword": keyword, "pc": 0, "mobile": 0, "total": 0}
+        return {
+            "keyword": keyword,
+            "pc": 0,
+            "mobile": 0,
+            "total": 0,
+            "related": []
+        }
 
     data = response.json()
 
     if "keywordList" not in data or not data["keywordList"]:
-        return {"keyword": keyword, "pc": 0, "mobile": 0, "total": 0}
+        return {
+            "keyword": keyword,
+            "pc": 0,
+            "mobile": 0,
+            "total": 0,
+            "related": []
+        }
 
-    item = data["keywordList"][0]
+    first = data["keywordList"][0]
 
-    pc = item.get("monthlyPcQcCnt", 0)
-    mobile = item.get("monthlyMobileQcCnt", 0)
+    pc = first.get("monthlyPcQcCnt", 0)
+    mobile = first.get("monthlyMobileQcCnt", 0)
 
     if pc == "< 10": pc = 0
     if mobile == "< 10": mobile = 0
@@ -73,15 +85,22 @@ def search_book(keyword):
     pc = int(pc)
     mobile = int(mobile)
 
+    # 연관검색어 수집
+    related = []
+    for item in data["keywordList"][:10]:
+        if item.get("relKeyword") and item["relKeyword"] != keyword:
+            related.append(item["relKeyword"])
+
     return {
         "keyword": keyword,
         "pc": pc,
         "mobile": mobile,
-        "total": pc + mobile
+        "total": pc + mobile,
+        "related": related
     }
 
 # -----------------------------
-# 백그라운드 처리 (대량 대응)
+# 백그라운드 처리
 # -----------------------------
 def process_job(job_id, book_list):
     results = []
@@ -96,7 +115,7 @@ def process_job(job_id, book_list):
     jobs[job_id]["status"] = "completed"
 
 # -----------------------------
-# 메인 UI (도표 복구)
+# UI
 # -----------------------------
 @app.route("/")
 def home():
@@ -107,11 +126,12 @@ def home():
     <style>
     body {font-family:Arial;padding:40px;}
     textarea {width:600px;height:250px;}
-    table {border-collapse:collapse;margin-top:20px;min-width:1100px;}
+    table {border-collapse:collapse;margin-top:20px;min-width:1200px;}
     th,td {border:1px solid #ccc;padding:8px;text-align:center;}
     th {background:#222;color:#fff;}
     #table-container {overflow-x:auto;}
-    button {padding:10px 20px;font-size:16px;}
+    .related-row {background:#f7f7f7;}
+    button {padding:8px 15px;}
     </style>
     </head>
     <body>
@@ -120,22 +140,27 @@ def home():
 
     <textarea id="books" placeholder="책 제목을 줄바꿈으로 입력하세요"></textarea><br><br>
 
-    <label>
-        <input type="checkbox" id="related" checked>
-        연관검색어 포함
-    </label>
-
-    <br><br>
     <button onclick="startSearch()">검색 시작</button>
 
     <div id="progress" style="margin-top:20px;font-size:18px;"></div>
+
+    <div style="margin-top:20px;">
+        <label>정렬: </label>
+        <select id="sortOption" onchange="applySort()">
+            <option value="original">원본 순서</option>
+            <option value="desc">조회수 높은순</option>
+            <option value="asc">조회수 낮은순</option>
+        </select>
+    </div>
 
     <div id="table-container">
         <table id="result-table"></table>
     </div>
 
     <script>
+
     let jobId = null;
+    let originalResults = [];
 
     function startSearch(){
         document.getElementById("progress").innerHTML = "🔄 검색 진행중...";
@@ -145,8 +170,7 @@ def home():
             method:"POST",
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify({
-                books:document.getElementById("books").value,
-                related:document.getElementById("related").checked
+                books:document.getElementById("books").value
             })
         })
         .then(res=>res.json())
@@ -165,29 +189,63 @@ def home():
             if(data.status!=="completed"){
                 setTimeout(checkStatus,2000);
             } else {
-                loadTable(data.results);
+                originalResults = data.results;
+                loadTable(originalResults);
                 document.getElementById("progress").innerHTML +=
                 "<br><br><a href='/download/"+jobId+"'>엑셀 다운로드</a>";
             }
         });
     }
 
+    function applySort(){
+        let option = document.getElementById("sortOption").value;
+        let sorted = [...originalResults];
+
+        if(option === "desc"){
+            sorted.sort((a,b)=> b.total - a.total);
+        }
+        else if(option === "asc"){
+            sorted.sort((a,b)=> a.total - b.total);
+        }
+
+        loadTable(sorted);
+    }
+
     function loadTable(results){
+
         let table=document.getElementById("result-table");
         let html="<tr><th>선택</th><th>책 제목</th><th>PC</th><th>모바일</th><th>총합</th></tr>";
 
-        results.forEach(r=>{
+        results.forEach((r,index)=>{
+
+            let hasRelated = r.related && r.related.length >= 2;
+
             html+=`<tr>
-                <td><input type='checkbox' checked></td>
+                <td>${hasRelated ? "<input type='checkbox' onclick='toggleRelated("+index+")'>" : ""}</td>
                 <td>${r.keyword}</td>
                 <td>${r.pc}</td>
                 <td>${r.mobile}</td>
                 <td>${r.total}</td>
             </tr>`;
+
+            if(hasRelated){
+                html+=`<tr id="rel-${index}" class="related-row" style="display:none;">
+                    <td colspan="5">
+                        <b>${r.keyword} 연관검색어:</b><br>
+                        ${r.related.join(" , ")}
+                    </td>
+                </tr>`;
+            }
         });
 
         table.innerHTML=html;
     }
+
+    function toggleRelated(index){
+        let row=document.getElementById("rel-"+index);
+        row.style.display = row.style.display==="none" ? "table-row" : "none";
+    }
+
     </script>
 
     </body>
@@ -195,7 +253,7 @@ def home():
     """
 
 # -----------------------------
-# 작업 시작
+# 시작
 # -----------------------------
 @app.route("/start", methods=["POST"])
 def start():
@@ -214,16 +272,10 @@ def start():
     threading.Thread(target=process_job, args=(job_id, books)).start()
     return jsonify({"job_id": job_id})
 
-# -----------------------------
-# 상태 확인
-# -----------------------------
 @app.route("/status/<job_id>")
 def status(job_id):
     return jsonify(jobs[job_id])
 
-# -----------------------------
-# 엑셀 다운로드
-# -----------------------------
 @app.route("/download/<job_id>")
 def download(job_id):
     df = pd.DataFrame(jobs[job_id]["results"])
