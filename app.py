@@ -1,3 +1,7 @@
+from flask import session
+app.secret_key = "supersecretkey"
+
+
 import os
 import time
 import hashlib
@@ -160,3 +164,4 @@ def download():
 
 if __name__ == "__main__":
     app.run()
+
