@@ -17,6 +17,7 @@ ACCESS_KEY = os.environ.get("ACCESS_KEY")
 SECRET_KEY = os.environ.get("SECRET_KEY")
 CUSTOMER_ID = os.environ.get("CUSTOMER_ID")
 
+
 # -----------------------------
 # 네이버 서명 생성
 # -----------------------------
@@ -28,6 +29,7 @@ def generate_signature(timestamp, method, uri):
         hashlib.sha256
     )
     return base64.b64encode(hash.digest()).decode()
+
 
 # -----------------------------
 # 네이버 검색 API
@@ -79,8 +81,10 @@ def search_book(keyword):
     pc = first.get("monthlyPcQcCnt", 0)
     mobile = first.get("monthlyMobileQcCnt", 0)
 
-    if pc == "< 10": pc = 0
-    if mobile == "< 10": mobile = 0
+    if pc == "< 10":
+        pc = 0
+    if mobile == "< 10":
+        mobile = 0
 
     pc = int(pc)
     mobile = int(mobile)
@@ -98,6 +102,7 @@ def search_book(keyword):
         "related": related
     }
 
+
 # -----------------------------
 # 백그라운드 처리
 # -----------------------------
@@ -112,6 +117,7 @@ def process_job(job_id, book_list):
 
     jobs[job_id]["results"] = results
     jobs[job_id]["status"] = "completed"
+
 
 # -----------------------------
 # UI
@@ -131,6 +137,7 @@ def home():
     #table-container {overflow-x:auto;}
     .related-row {background:#f7f7f7;}
     button {padding:8px 15px;}
+    select {padding:5px;}
     </style>
     </head>
     <body>
@@ -292,6 +299,7 @@ def home():
     </html>
     """
 
+
 # -----------------------------
 # 시작
 # -----------------------------
@@ -312,9 +320,11 @@ def start():
     threading.Thread(target=process_job, args=(job_id, books)).start()
     return jsonify({"job_id": job_id})
 
+
 @app.route("/status/<job_id>")
 def status(job_id):
     return jsonify(jobs[job_id])
+
 
 @app.route("/download/<job_id>")
 def download(job_id):
@@ -330,5 +340,7 @@ def download(job_id):
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
