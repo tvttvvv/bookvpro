@@ -114,7 +114,6 @@ def process_job(job_id, book_list):
 
         main_result = search_book(book)
 
-        # 🔥 연관검색어도 검색량 재조회
         detailed_related = []
         for rel in main_result["related"]:
             rel_result = search_book(rel)
@@ -236,36 +235,70 @@ def home():
             filtered.sort((a,b)=> a.total - b.total);
         }
 
-        loadTable(filtered, relatedOption);
+        loadTable(filtered, relatedOption, sortOption);
     }
 
-    function loadTable(results, relatedOption="original"){
+    function loadTable(results, relatedOption="original", sortOption="original"){
 
         let table=document.getElementById("result-table");
         let html="<tr><th>구분</th><th>키워드</th><th>PC</th><th>모바일</th><th>총합</th></tr>";
 
-        results.forEach((r)=>{
+        if(relatedOption === "relatedOnly"){
 
-            html+=`<tr>
-                <td>도서</td>
-                <td><b>${r.keyword}</b></td>
-                <td>${r.pc}</td>
-                <td>${r.mobile}</td>
-                <td>${r.total}</td>
-            </tr>`;
+            let allRelated = [];
 
-            if(r.related_detail && relatedOption !== "original"){
-                r.related_detail.forEach(rel=>{
-                    html+=`<tr class="related-row">
-                        <td>연관</td>
-                        <td>↳ ${rel.keyword}</td>
-                        <td>${rel.pc}</td>
-                        <td>${rel.mobile}</td>
-                        <td>${rel.total}</td>
-                    </tr>`;
-                });
+            results.forEach(r=>{
+                if(r.related_detail){
+                    r.related_detail.forEach(rel=>{
+                        allRelated.push(rel);
+                    });
+                }
+            });
+
+            if(sortOption === "desc"){
+                allRelated.sort((a,b)=> b.total - a.total);
             }
-        });
+            else if(sortOption === "asc"){
+                allRelated.sort((a,b)=> a.total - b.total);
+            }
+
+            allRelated.forEach(rel=>{
+                html+=`<tr class="related-row">
+                    <td>연관</td>
+                    <td>${rel.keyword}</td>
+                    <td>${rel.pc}</td>
+                    <td>${rel.mobile}</td>
+                    <td>${rel.total}</td>
+                </tr>`;
+            });
+
+        }
+        else{
+
+            results.forEach(r=>{
+
+                html+=`<tr>
+                    <td>도서</td>
+                    <td><b>${r.keyword}</b></td>
+                    <td>${r.pc}</td>
+                    <td>${r.mobile}</td>
+                    <td>${r.total}</td>
+                </tr>`;
+
+                if(relatedOption === "all" && r.related_detail){
+                    r.related_detail.forEach(rel=>{
+                        html+=`<tr class="related-row">
+                            <td>연관</td>
+                            <td>↳ ${rel.keyword}</td>
+                            <td>${rel.pc}</td>
+                            <td>${rel.mobile}</td>
+                            <td>${rel.total}</td>
+                        </tr>`;
+                    });
+                }
+
+            });
+        }
 
         table.innerHTML=html;
     }
