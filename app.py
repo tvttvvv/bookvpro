@@ -111,8 +111,18 @@ def process_job(job_id, book_list):
     total = len(book_list)
 
     for idx, book in enumerate(book_list):
-        result = search_book(book)
-        results.append(result)
+
+        main_result = search_book(book)
+
+        # 🔥 연관검색어도 검색량 재조회
+        detailed_related = []
+        for rel in main_result["related"]:
+            rel_result = search_book(rel)
+            detailed_related.append(rel_result)
+
+        main_result["related_detail"] = detailed_related
+
+        results.append(main_result)
         jobs[job_id]["progress"] = int((idx + 1) / total * 100)
 
     jobs[job_id]["results"] = results
@@ -136,8 +146,7 @@ def home():
     th {background:#222;color:#fff;}
     #table-container {overflow-x:auto;}
     .related-row {background:#f7f7f7;}
-    button {padding:8px 15px;}
-    select {padding:5px;}
+    select,button {padding:6px;}
     </style>
     </head>
     <body>
@@ -145,7 +154,6 @@ def home():
     <h2>BookVPro 검색 시스템</h2>
 
     <textarea id="books" placeholder="책 제목을 줄바꿈으로 입력하세요"></textarea><br><br>
-
     <button onclick="startSearch()">검색 시작</button>
 
     <div id="progress" style="margin-top:20px;font-size:18px;"></div>
@@ -221,10 +229,6 @@ def home():
 
         let filtered = [...originalResults];
 
-        if(relatedOption === "relatedOnly"){
-            filtered = filtered.filter(r => r.related && r.related.length >= 2);
-        }
-
         if(sortOption === "desc"){
             filtered.sort((a,b)=> b.total - a.total);
         }
@@ -238,59 +242,32 @@ def home():
     function loadTable(results, relatedOption="original"){
 
         let table=document.getElementById("result-table");
-        let html="<tr><th>선택</th><th>책 제목</th><th>PC</th><th>모바일</th><th>총합</th></tr>";
+        let html="<tr><th>구분</th><th>키워드</th><th>PC</th><th>모바일</th><th>총합</th></tr>";
 
-        results.forEach((r,index)=>{
+        results.forEach((r)=>{
 
-            let hasRelated = r.related && r.related.length >= 2;
+            html+=`<tr>
+                <td>도서</td>
+                <td><b>${r.keyword}</b></td>
+                <td>${r.pc}</td>
+                <td>${r.mobile}</td>
+                <td>${r.total}</td>
+            </tr>`;
 
-            if(relatedOption === "all"){
-
-                html+=`<tr>
-                    <td></td>
-                    <td><b>${r.keyword}</b></td>
-                    <td>${r.pc}</td>
-                    <td>${r.mobile}</td>
-                    <td>${r.total}</td>
-                </tr>`;
-
-                if(r.related && r.related.length){
-                    r.related.forEach(rel=>{
-                        html+=`<tr class="related-row">
-                            <td></td>
-                            <td>↳ ${rel}</td>
-                            <td colspan="3">연관검색어</td>
-                        </tr>`;
-                    });
-                }
-            }
-            else{
-
-                html+=`<tr>
-                    <td>${hasRelated ? "<input type='checkbox' onclick='toggleRelated("+index+")'>" : ""}</td>
-                    <td>${r.keyword}</td>
-                    <td>${r.pc}</td>
-                    <td>${r.mobile}</td>
-                    <td>${r.total}</td>
-                </tr>`;
-
-                if(hasRelated){
-                    html+=`<tr id="rel-${index}" class="related-row" style="display:none;">
-                        <td colspan="5">
-                            <b>${r.keyword} 연관검색어:</b><br>
-                            ${r.related.join(" , ")}
-                        </td>
+            if(r.related_detail && relatedOption !== "original"){
+                r.related_detail.forEach(rel=>{
+                    html+=`<tr class="related-row">
+                        <td>연관</td>
+                        <td>↳ ${rel.keyword}</td>
+                        <td>${rel.pc}</td>
+                        <td>${rel.mobile}</td>
+                        <td>${rel.total}</td>
                     </tr>`;
-                }
+                });
             }
         });
 
         table.innerHTML=html;
-    }
-
-    function toggleRelated(index){
-        let row=document.getElementById("rel-"+index);
-        row.style.display = row.style.display==="none" ? "table-row" : "none";
     }
 
     </script>
@@ -300,9 +277,6 @@ def home():
     """
 
 
-# -----------------------------
-# 시작
-# -----------------------------
 @app.route("/start", methods=["POST"])
 def start():
     data = request.json
@@ -328,7 +302,13 @@ def status(job_id):
 
 @app.route("/download/<job_id>")
 def download(job_id):
-    df = pd.DataFrame(jobs[job_id]["results"])
+    rows = []
+    for r in jobs[job_id]["results"]:
+        rows.append(r)
+        for rel in r.get("related_detail", []):
+            rows.append(rel)
+
+    df = pd.DataFrame(rows)
     output = io.BytesIO()
     df.to_excel(output, index=False)
     output.seek(0)
