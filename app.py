@@ -85,7 +85,6 @@ def search_book(keyword):
     pc = int(pc)
     mobile = int(mobile)
 
-    # 연관검색어 수집
     related = []
     for item in data["keywordList"][:10]:
         if item.get("relKeyword") and item["relKeyword"] != keyword:
@@ -144,13 +143,24 @@ def home():
 
     <div id="progress" style="margin-top:20px;font-size:18px;"></div>
 
-    <div style="margin-top:20px;">
-        <label>정렬: </label>
-        <select id="sortOption" onchange="applySort()">
-            <option value="original">원본 순서</option>
-            <option value="desc">조회수 높은순</option>
-            <option value="asc">조회수 낮은순</option>
-        </select>
+    <div style="margin-top:20px; display:flex; gap:30px; align-items:center;">
+        <div>
+            <label>정렬: </label>
+            <select id="sortOption" onchange="applyFilters()">
+                <option value="original">원본 순서</option>
+                <option value="desc">조회수 높은순</option>
+                <option value="asc">조회수 낮은순</option>
+            </select>
+        </div>
+
+        <div>
+            <label>연관검색어: </label>
+            <select id="relatedOption" onchange="applyFilters()">
+                <option value="original">원본</option>
+                <option value="relatedOnly">연관검색어만</option>
+                <option value="all">전체</option>
+            </select>
+        </div>
     </div>
 
     <div id="table-container">
@@ -163,7 +173,7 @@ def home():
     let originalResults = [];
 
     function startSearch(){
-        document.getElementById("progress").innerHTML = "🔄 검색 진행중...";
+        document.getElementById("progress").innerHTML = "검색 진행중...";
         document.getElementById("result-table").innerHTML = "";
 
         fetch("/start",{
@@ -190,28 +200,35 @@ def home():
                 setTimeout(checkStatus,2000);
             } else {
                 originalResults = data.results;
-                loadTable(originalResults);
+                applyFilters();
                 document.getElementById("progress").innerHTML +=
                 "<br><br><a href='/download/"+jobId+"'>엑셀 다운로드</a>";
             }
         });
     }
 
-    function applySort(){
-        let option = document.getElementById("sortOption").value;
-        let sorted = [...originalResults];
+    function applyFilters(){
 
-        if(option === "desc"){
-            sorted.sort((a,b)=> b.total - a.total);
-        }
-        else if(option === "asc"){
-            sorted.sort((a,b)=> a.total - b.total);
+        let sortOption = document.getElementById("sortOption").value;
+        let relatedOption = document.getElementById("relatedOption").value;
+
+        let filtered = [...originalResults];
+
+        if(relatedOption === "relatedOnly"){
+            filtered = filtered.filter(r => r.related && r.related.length >= 2);
         }
 
-        loadTable(sorted);
+        if(sortOption === "desc"){
+            filtered.sort((a,b)=> b.total - a.total);
+        }
+        else if(sortOption === "asc"){
+            filtered.sort((a,b)=> a.total - b.total);
+        }
+
+        loadTable(filtered, relatedOption);
     }
 
-    function loadTable(results){
+    function loadTable(results, relatedOption="original"){
 
         let table=document.getElementById("result-table");
         let html="<tr><th>선택</th><th>책 제목</th><th>PC</th><th>모바일</th><th>총합</th></tr>";
@@ -220,21 +237,44 @@ def home():
 
             let hasRelated = r.related && r.related.length >= 2;
 
-            html+=`<tr>
-                <td>${hasRelated ? "<input type='checkbox' onclick='toggleRelated("+index+")'>" : ""}</td>
-                <td>${r.keyword}</td>
-                <td>${r.pc}</td>
-                <td>${r.mobile}</td>
-                <td>${r.total}</td>
-            </tr>`;
+            if(relatedOption === "all"){
 
-            if(hasRelated){
-                html+=`<tr id="rel-${index}" class="related-row" style="display:none;">
-                    <td colspan="5">
-                        <b>${r.keyword} 연관검색어:</b><br>
-                        ${r.related.join(" , ")}
-                    </td>
+                html+=`<tr>
+                    <td></td>
+                    <td><b>${r.keyword}</b></td>
+                    <td>${r.pc}</td>
+                    <td>${r.mobile}</td>
+                    <td>${r.total}</td>
                 </tr>`;
+
+                if(r.related && r.related.length){
+                    r.related.forEach(rel=>{
+                        html+=`<tr class="related-row">
+                            <td></td>
+                            <td>↳ ${rel}</td>
+                            <td colspan="3">연관검색어</td>
+                        </tr>`;
+                    });
+                }
+            }
+            else{
+
+                html+=`<tr>
+                    <td>${hasRelated ? "<input type='checkbox' onclick='toggleRelated("+index+")'>" : ""}</td>
+                    <td>${r.keyword}</td>
+                    <td>${r.pc}</td>
+                    <td>${r.mobile}</td>
+                    <td>${r.total}</td>
+                </tr>`;
+
+                if(hasRelated){
+                    html+=`<tr id="rel-${index}" class="related-row" style="display:none;">
+                        <td colspan="5">
+                            <b>${r.keyword} 연관검색어:</b><br>
+                            ${r.related.join(" , ")}
+                        </td>
+                    </tr>`;
+                }
             }
         });
 
